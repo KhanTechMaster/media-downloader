@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07070b">
+  <title>Media Downloader</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%86%93%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="bg-orbs" aria-hidden="true">
+    <span class="orb orb-1"></span>
+    <span class="orb orb-2"></span>
+    <span class="orb orb-3"></span>
+  </div>
+
+  <header class="topbar">
+    <div class="wrap">
+      <div class="brand">
+        <span class="logo">&#8595;</span>
+        <div class="brand-text">
+          <h1>Media Downloader</h1>
+          <p>YouTube &middot; Facebook &middot; Instagram &middot; TikTok &middot; X</p>
+        </div>
+      </div>
+      <span class="conn-pill" id="conn-pill" data-state="live" title="Live updates">Live</span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div id="conn" class="conn hidden" role="status" aria-live="polite"></div>
+  </div>
+
+  <main class="wrap">
+    <section class="card glass">
+      <label class="label" for="urls">
+        Links <span class="hint">one per line &mdash; videos, Shorts, Reels, TikToks, tweets</span>
+      </label>
+      <textarea id="urls" rows="4" spellcheck="false" autocomplete="off"
+        placeholder="Paste links here, one per line&#10;https://www.youtube.com/watch?v=...&#10;https://www.tiktok.com/@user/video/1234567890"></textarea>
+
+      <div class="options">
+        <div class="segmented" id="mode">
+          <button type="button" class="active" data-mode="video">Video</button>
+          <button type="button" data-mode="audio">Audio</button>
+        </div>
+
+        <select id="quality" aria-label="Quality"></select>
+
+        <label class="check">
+          <input type="checkbox" id="playlist">
+          <span>Full playlist</span>
+        </label>
+
+        <div class="spacer"></div>
+
+        <button type="button" id="fetch" class="btn ghost">Preview</button>
+        <button type="button" id="download" class="btn primary">Download</button>
+      </div>
+
+      <p id="form-error" class="error hidden" role="alert" aria-live="assertive"></p>
+      <div id="preview" class="preview hidden"></div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Downloads</h2>
+        <button type="button" id="clear" class="btn ghost small">Clear finished</button>
+      </div>
+      <div id="jobs" class="jobs">
+        <p class="empty glass" id="empty">Nothing here yet &mdash; paste a link above and hit Download.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast glass" role="status" aria-live="polite"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
