@@ -31,6 +31,17 @@ VIDEO_QUALITIES: Dict[str, Optional[int]] = {
 AUDIO_FORMATS = ("mp3", "m4a", "opus")
 ACTIVE_STATUSES = ("queued", "downloading", "processing")
 
+# Human-friendly resolution tags appended to video filenames before .mp4,
+# e.g. "My Video - [720p HD].mp4", "My Video - [1080p Full HD].mp4".
+RESOLUTION_LABELS: Dict[str, str] = {
+    "360": "360p",
+    "480": "480p",
+    "720": "720p HD",
+    "1080": "1080p Full HD",
+    "1440": "1440p QHD",
+    "2160": "4K 2160p",
+}
+
 
 @lru_cache(maxsize=1)
 def find_ffmpeg() -> Optional[str]:
@@ -52,6 +63,80 @@ def video_format_selector(quality: str) -> str:
     if find_ffmpeg():
         return capped
     return f"best[height<={height}]/best"
+
+
+def label_for_height(height: Optional[int]) -> str:
+    """Map a numeric height to a human-friendly resolution tag."""
+    if not height:
+        return "Best"
+    key = str(int(height))
+    if key in RESOLUTION_LABELS:
+        return RESOLUTION_LABELS[key]
+    # Unknown heights (e.g. 540, 2160+ variants) still get an explicit tag.
+    if int(height) >= 2000:
+        return f"4K {int(height)}p"
+    return f"{int(height)}p"
+
+
+def video_resolution_label(job: Job) -> str:
+    """Resolution tag for the requested quality, e.g. '720p HD'.
+
+    Falls back to the actual probed height for mode='best' so files still
+    carry an explicit tag like '[1080p Full HD]' instead of a bare name.
+    """
+    if job.quality in RESOLUTION_LABELS:
+        return RESOLUTION_LABELS[job.quality]
+    if job.quality == "best":
+        return label_for_height(job.actual_height)
+    try:
+        return label_for_height(int(job.quality))
+    except (TypeError, ValueError):
+        return label_for_height(job.actual_height) if job.actual_height else "Best"
+
+
+def finalize_video_path(original: str, job: Job) -> str:
+    """Rename a finished video so the resolution tag sits before .mp4.
+
+    Turns ``<Title> [<id>].mp4`` into ``<Title> - [720p HD].mp4`` (and the
+    equivalent for 360p/480p/1080p/1440p/4K). Dedupes with ``(n)`` so the
+    same title downloaded at multiple resolutions never collides.
+    """
+    src = Path(original)
+    try:
+        if not src.is_file():
+            return original
+        label = video_resolution_label(job)
+        stem = src.stem
+        # Strip the trailing " [<id>]" added by outtmpl to recover the title.
+        clean = re.sub(r"\s+\[[A-Za-z0-9_-]{6,}\]$", "", stem).strip() or stem
+        # Avoid stacking tags on re-downloads: "Title - [720p HD]" -> "Title".
+        clean = re.sub(r"\s+-\s+\[.+?\]$", "", clean).strip() or clean
+        ext = src.suffix or ".mp4"
+        if f"[{label}]" in stem:
+            return original
+        dst = src.with_name(f"{clean} - [{label}]{ext}")
+        try:
+            if dst.resolve() == src.resolve():
+                return original
+        except OSError:
+            pass
+        counter = 1
+        candidate = dst
+        while candidate.exists():
+            try:
+                if candidate.resolve() == src.resolve():
+                    break
+            except OSError:
+                pass
+            candidate = src.with_name(f"{clean} - [{label}] ({counter}){ext}")
+            counter += 1
+            if counter > 100:
+                return original
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        src.rename(candidate)
+        return str(candidate)
+    except Exception:
+        return original
 
 
 def clean_error(exc: BaseException) -> str:
@@ -83,6 +168,7 @@ class Job:
     filename: str = ""
     files: List[str] = field(default_factory=list)
     error: str = ""
+    actual_height: Optional[int] = None
     created_at: float = field(default_factory=time.time)
     cancel_requested: bool = False
     notify: Optional[Callable[[], None]] = field(default=None, repr=False, compare=False)
@@ -241,6 +327,9 @@ def build_options(job: Job) -> Dict[str, Any]:
     postprocessor_hook = _make_postprocessor_hook(job)
     post_hook = _make_post_hook(job)
 
+    # Base template stays collision-safe with [id]; the post-hook pipeline
+    # renames finished videos to "<Title> - [<resolution>].mp4" so each
+    # quality (360p/480p/720p/1080p/1440p/4K) gets an explicit tag.
     opts: Dict[str, Any] = {
         "outtmpl": {"default": str(DOWNLOAD_DIR / "%(title)s [%(id)s].%(ext)s")},
         "noprogress": True,
@@ -290,6 +379,15 @@ def _make_progress_hook(job: Job):
             job.title = info["title"]
         if not job.thumbnail and info.get("thumbnail"):
             job.thumbnail = info["thumbnail"]
+        # Track the actual video height so "best" downloads still get an
+        # explicit resolution tag (e.g. "[1080p Full HD]") at rename time.
+        try:
+            height = info.get("height")
+            if isinstance(height, (int, float)) and int(height) > 0:
+                if job.actual_height is None or int(height) > job.actual_height:
+                    job.actual_height = int(height)
+        except (TypeError, ValueError):
+            pass
 
         entries = info.get("n_entries") or 0
         entry = info.get("playlist_index") or 0
@@ -336,8 +434,11 @@ def _make_postprocessor_hook(job: Job):
 
 def _make_post_hook(job: Job):
     def hook(filepath: str) -> None:
-        job.files.append(filepath)
-        job.filename = filepath
+        final_path = filepath
+        if job.mode == "video":
+            final_path = finalize_video_path(filepath, job)
+        job.files.append(final_path)
+        job.filename = final_path
         job.percent = round(_overall(job, 100.0), 1) if job.entries else 100.0
         job.changed()
 

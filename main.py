@@ -21,7 +21,7 @@ STATIC_DIR = BASE_DIR / "static"
 SSE_MIN_INTERVAL = 0.25
 SSE_HEARTBEAT = 15.0
 
-app = FastAPI(title="Media Downloader", version="1.0")
+app = FastAPI(title="Ultimate Media Downloader", version="1.0")
 manager = JobManager()
 
 DOWNLOAD_DIR.mkdir(exist_ok=True)
